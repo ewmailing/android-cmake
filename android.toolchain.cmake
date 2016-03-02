@@ -207,6 +207,10 @@
 #     [X] Separated ANDROID_CXX_FLAGS into ANDROID_CXX_FLAGS and ANDROID_C_FLAGS ([X] kind of done already)
 #     [*] Note: MIPs settings were not changed/tested.
 #	
+#	- March 2015 (EW)
+#     [+] Disable soname versioning  
+#     [+] Set -std=gnu99 for C_FLAGS (tired of C89 warnings)
+#     [+] Added auto-selection for clang for r10e+ and ANDROID_TOOLCHAIN_NAME_PREFERENCE
 #
 # (EW) Additional Notes:
 # Looking at the switches used by compiling the hello-jni example from ndk-build V=1 in r8d, I see the following compiler flags:
@@ -316,6 +320,11 @@ endif()
 
 # this one not so much
 set( CMAKE_SYSTEM_VERSION 1 )
+
+# I'm under the impression that CMAKE_SYSTEM_NAME Android is recognized by CMake and does this automatically now.
+# But I'm not sure starting at what version (3.1?).
+# So for safety, disable it.
+set( CMAKE_PLATFORM_NO_VERSIONED_SONAME 1 )
 
 # rpath makes low sense for Android
 set( CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG "" )
@@ -1615,6 +1624,11 @@ if( DEFINED ANDROID_EXCEPTIONS AND ANDROID_STL_FORCE_FEATURES )
 #  set( CMAKE_C_FLAGS "-fno-exceptions ${CMAKE_C_FLAGS}" )
  endif()
 endif()
+
+
+# Maybe this isn't the best place for this, but C89 mode by default keeps tripping me up with different codebases.
+set( CMAKE_C_FLAGS "-std=gnu99" ${CMAKE_C_FLAGS} )
+
 
 # global includes and link directories
 include_directories( SYSTEM "${ANDROID_SYSROOT}/usr/include" ${ANDROID_STL_INCLUDE_DIRS} )
