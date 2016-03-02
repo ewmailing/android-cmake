@@ -163,6 +163,7 @@
 #    android-cmake toolchain searches for NDK/toolchain in the following order:
 #      ANDROID_NDK - cmake parameter
 #      ANDROID_NDK - environment variable
+#      ANDROID_NDK_ROOT - alternative environment variable to ANDROID_NDK
 #      ANDROID_STANDALONE_TOOLCHAIN - cmake parameter
 #      ANDROID_STANDALONE_TOOLCHAIN - environment variable
 #      ANDROID_NDK - default locations
@@ -183,6 +184,111 @@
 #    if VFP is set to NEON.
 #
 # ------------------------------------------------------------------------------
+# These are the notes from Eric Wing's branch of the OpenCV toolchain which is merged.
+# [X] means this change was not applied/merged with this file.
+#
+#	- modified August 2013 (EW)
+#     [X] updated for NDK r9 (standalone) ([X] already seems done)
+#     [X] Addded Perl helper scripts to make it easier to build multiple architectures in one shot.
+#     [~] Breaking change of behavior to so that ANDROID_STANDALONE_TOOLCHAIN overrides ANDROID_NDK because the latter uses semi-standard environmental variables that people may already have defined for other conflicting purposes.
+#     [~] Changed environmental variable to look for ANDROID_NDK_ROOT because this is the semi-official/blessed one according to Google via the NDK mailing list. ANDROID_NDK is still checked for backwards compatibility.
+#     [~] Changed a lot of flags to try to match stock Android more closely due build problems I was trying to track down. In the end, I lost track of which specific flags were the problem. See Additional Notes for flag differences between this and stock.
+#     [X] Changed armeabi-v7a to use -mfpu=vfpv3-d16 instead of -mfpu=vfp to conform with stock Android.
+#     [X] Changed VFPV3 mode to use -mfpu=vfpv3-d32
+#     [X] Use --sysroot=${ANDROID_SYSROOT} to match stock Android ([X] already seems done)
+#     [~] Use -fstack-protector -no-canonical-prefixes -Wa,--noexecstack to match stock Android
+#     [~] Use -no-canonical-prefixes  -Wl,--no-undefined -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now to match stock Android
+#     [~] Use -lc -lm to match stock Android
+#     [~] Removed -fsigned-char and -Wno-psabi because these don't appear in stock Android
+#     [~] Removed -f[no]exceptions flags from C flags because those are C++ options
+#     [~] Changed arm debug optimization level to O0 from Os
+#     [X] Added -funswitch-loops -finline-limit=300 to match stock Android ([X] already seems done)
+#     [X] Changed arm debug optimization level to O0 from Os ([X] already done)
+#     [X] Separated ANDROID_CXX_FLAGS into ANDROID_CXX_FLAGS and ANDROID_C_FLAGS ([X] kind of done already)
+#     [*] Note: MIPs settings were not changed/tested.
+#	
+#
+# (EW) Additional Notes:
+# Looking at the switches used by compiling the hello-jni example from ndk-build V=1 in r8d, I see the following compiler flags:
+# armeabi
+# -MMD -MP -MF /foo/hello-jni.o.d 
+# -fpic -ffunction-sections -funwind-tables -fstack-protector 
+# -D__ARM_ARCH_5__ -D__ARM_ARCH_5T__ -D__ARM_ARCH_5E__ -D__ARM_ARCH_5TE__ -no-canonical-prefixes 
+# -march=armv5te -mtune=xscale -msoft-float 
+# -mthumb 
+# -Os -g -DNDEBUG 
+# -fomit-frame-pointer -fno-strict-aliasing -finline-limit=64 
+#
+# -O0 -UNDEBUG  (debug only, not in release)
+# -marm -fno-omit-frame-pointer  (debug only, not in release)
+#
+# -DANDROID  -Wa,--noexecstack  
+
+
+# armeabi-v7a
+# -MMD -MP -MF /foo/hello-jni.o.d 
+# -fpic -ffunction-sections -funwind-tables -fstack-protector 
+# -D__ARM_ARCH_5__ -D__ARM_ARCH_5T__ -D__ARM_ARCH_5E__ -D__ARM_ARCH_5TE__ -no-canonical-prefixes 
+# -march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16 
+# -mthumb 
+# -Os -g -DNDEBUG 
+# -fomit-frame-pointer -fno-strict-aliasing -finline-limit=64 
+#
+# -O0 -UNDEBUG  (debug only, not in release)
+# -marm -fno-omit-frame-pointer  (debug only, not in release)
+#
+# -DANDROID  -Wa,--noexecstack  
+
+# x86 
+# -MMD -MP -MF /foo/hello-jni.o.d 
+# -ffunction-sections -funwind-tables -no-canonical-prefixes -fstack-protector 
+# -O2 -g -DNDEBUG 
+# -fomit-frame-pointer -fstrict-aliasing -funswitch-loops -finline-limit=300 
+#
+# -O0 -UNDEBUG (debug only, not in release)
+# -fno-omit-frame-pointer -fno-strict-aliasing (debug only, not in release)
+#
+# -DANDROID  -Wa,--noexecstack 
+
+# The link flags are:
+
+
+# armeabi
+# -Wl,-soname,libhello-jni.so -shared 
+# --sysroot=/fee/android-ndk/platforms/android-14/arch-arm 
+# /foo/hello-jni.o 
+# -no-canonical-prefixes  -Wl,--no-undefined -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now  -lc -lm 
+
+# armeabi-v7a
+# -Wl,-soname,libhello-jni.so -shared 
+# --sysroot=/fee/android-ndk/platforms/android-14/arch-arm 
+# /foo/hello-jni.o 
+# -no-canonical-prefixes -march=armv7-a -Wl,--fix-cortex-a8 -Wl,--no-undefined -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now  -lc -lm
+
+# x86
+# -Wl,-soname,libhello-jni.so -shared 
+# --sysroot=/fee/android-ndk/platforms/android-14/arch-x86 
+# /foo/hello-jni.o 
+# -no-canonical-prefixes  -Wl,--no-undefined -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now  -lc -lm
+
+
+# Some interesting observations are that debug doesn't have different flags, but overrides set flags with additional switches.
+
+# Differences from Stock Android:
+# This toolchain has deviated from the stock flags.
+#
+# I don't do the override technique as described directly above.
+#
+# -ffunction-sections has been separated into the option ANDROID_FUNCTION_LEVEL_LINKING. 
+# But this also brings in -fdata-sections and the linker flags -Wl,--gc-sections which are not in the Android defaults
+#
+# -funwind-tables has been completely removed for arm by this file. It looks like the author intentionally did this for performance.
+# 
+# Optimization flags are using O3 in this file as opposed to stock 02 for Release. It looks like the original authors have done some benchmarking so I am deferring to them.
+# I am however changing the Os to O0 for debug.
+#
+# ------------------------------------------------------------------------------
+
 
 cmake_minimum_required( VERSION 2.6.3 )
 
@@ -378,9 +484,20 @@ if( NOT ANDROID_NDK_HOST_X64 )
  set( ANDROID_NDK_HOST_SYSTEM_NAME ${ANDROID_NDK_HOST_SYSTEM_NAME2} )
 endif()
 
+
+# EW: Allow for ANDROID_NDK_ROOT variable if ANDROID_NDK is not defined
+if( NOT ANDROID_NDK )
+  SET(ANDROID_NDK ${ANDROID_NDK_ROOT})
+endif()
+
 # see if we have path to Android NDK
-if( NOT ANDROID_NDK AND NOT ANDROID_STANDALONE_TOOLCHAIN )
+# but only if the user hasn't tried to provide a standalone toolchain as an override.
+if( NOT ANDROID_STANDALONE_TOOLCHAIN )
   __INIT_VARIABLE( ANDROID_NDK PATH ENV_ANDROID_NDK )
+  # According to a Google engineer on the Android NDK mailing list, the semi-official/blessed environmental variable is ANDROID_NDK_ROOT, not ANDROID_NDK.
+  if ( NOT ANDROID_NDK )
+    __INIT_VARIABLE( ANDROID_NDK PATH ENV_ANDROID_NDK_ROOT )
+  endif( NOT ANDROID_NDK )
 endif()
 if( NOT ANDROID_NDK )
  # see if we have path to Android standalone toolchain
@@ -1199,7 +1316,14 @@ if (ARM64_V8A )
   set( ANDROID_CXX_FLAGS_RELEASE "${ANDROID_CXX_FLAGS_RELEASE} -funswitch-loops -finline-limit=300" )
  endif()
 elseif( ARMEABI OR ARMEABI_V7A)
- set( ANDROID_CXX_FLAGS "${ANDROID_CXX_FLAGS} -funwind-tables" )
+ # EW: Trying to figure out best approach to merge. NDK defines:
+ # "-fpic -fstack-protector -no-canonical-prefixes -Wa,--noexecstack"
+ # NDK also defines -ffunction-sections -funwind-tables but they result in worse OpenCV performance
+ # Taka sets "-funwind-tables"
+ set( ANDROID_CXX_FLAGS "${ANDROID_CXX_FLAGS} -funwind-tables -fpic -fstack-protector -no-canonical-prefixes -Wa,--noexecstack" )
+ # NDK also sets these defines:
+ remove_definitions( -D__ARM_ARCH_5__ -D__ARM_ARCH_5T__ -D__ARM_ARCH_5E__ -D__ARM_ARCH_5TE__ )
+ add_definitions( -D__ARM_ARCH_5__ -D__ARM_ARCH_5T__ -D__ARM_ARCH_5E__ -D__ARM_ARCH_5TE__ )
  if( NOT ANDROID_FORCE_ARM_BUILD AND NOT ARMEABI_V6 )
   set( ANDROID_CXX_FLAGS_RELEASE "-mthumb -fomit-frame-pointer -fno-strict-aliasing" )
   set( ANDROID_CXX_FLAGS_DEBUG   "-marm -fno-omit-frame-pointer -fno-strict-aliasing" )
@@ -1215,13 +1339,22 @@ elseif( ARMEABI OR ARMEABI_V7A)
   endif()
  endif()
 elseif( X86 OR X86_64 )
- set( ANDROID_CXX_FLAGS "${ANDROID_CXX_FLAGS} -funwind-tables" )
+ # EW: Trying to figure out best approach to merge. NDK defines:
+ # "-no-canonical-prefixes -funwind-tables -fstack-protector -Wa,--noexecstack"
+ # Taka sets "-funwind-tables"
+ set( ANDROID_CXX_FLAGS "${ANDROID_CXX_FLAGS} -funwind-tables -no-canonical-prefixes -funwind-tables -fstack-protector -Wa,--noexecstack" )
  if( NOT ANDROID_COMPILER_IS_CLANG )
   set( ANDROID_CXX_FLAGS "${ANDROID_CXX_FLAGS} -funswitch-loops -finline-limit=300" )
  endif()
  set( ANDROID_CXX_FLAGS_RELEASE "-fomit-frame-pointer -fstrict-aliasing" )
  set( ANDROID_CXX_FLAGS_DEBUG   "-fno-omit-frame-pointer -fno-strict-aliasing" )
 elseif( MIPS OR MIPS64 )
+ # EW: Trying to figure out best approach to merge. NDK defines:
+ # -fpic -Wno-psabi -fno-strict-aliasing -finline-functions -ffunction-sections -funwind-tables -fmessage-length=0 -fno-inline-functions-called-once -fgcse-after-reload -frerun-cse-after-loop -frename-registers
+ # Taka is setting:
+ # -fno-strict-aliasing -finline-functions -funwind-tables -fmessage-length=0
+ # With a clang vs gcc conditional.
+ # I've opted to take Taka
  set( ANDROID_CXX_FLAGS         "${ANDROID_CXX_FLAGS} -fno-strict-aliasing -finline-functions -funwind-tables -fmessage-length=0" )
  set( ANDROID_CXX_FLAGS_RELEASE "-fomit-frame-pointer" )
  set( ANDROID_CXX_FLAGS_DEBUG   "-fno-omit-frame-pointer" )
@@ -1234,7 +1367,8 @@ elseif()
  set( ANDROID_CXX_FLAGS_DEBUG   "" )
 endif()
 
-set( ANDROID_CXX_FLAGS "${ANDROID_CXX_FLAGS} -fsigned-char" ) # good/necessary when porting desktop libraries
+# The default Android build process does not pass -fsigned-char.
+#set( ANDROID_CXX_FLAGS "${ANDROID_CXX_FLAGS} -fsigned-char" ) # good/necessary when porting desktop libraries
 
 if( NOT X86 AND NOT ANDROID_COMPILER_IS_CLANG )
  set( ANDROID_CXX_FLAGS "-Wno-psabi ${ANDROID_CXX_FLAGS}" )
@@ -1285,9 +1419,10 @@ if( EXISTS "${__libstl}" OR EXISTS "${__libsupcxx}" )
   set( CMAKE_C_CREATE_SHARED_LIBRARY "<CMAKE_C_COMPILER> <CMAKE_SHARED_LIBRARY_C_FLAGS> <LANGUAGE_COMPILE_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS> <CMAKE_SHARED_LIBRARY_SONAME_C_FLAG><TARGET_SONAME> -o <TARGET> <OBJECTS> <LINK_LIBRARIES>" )
   set( CMAKE_C_CREATE_SHARED_MODULE  "<CMAKE_C_COMPILER> <CMAKE_SHARED_LIBRARY_C_FLAGS> <LANGUAGE_COMPILE_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS> <CMAKE_SHARED_LIBRARY_SONAME_C_FLAG><TARGET_SONAME> -o <TARGET> <OBJECTS> <LINK_LIBRARIES>" )
   set( CMAKE_C_LINK_EXECUTABLE       "<CMAKE_C_COMPILER> <FLAGS> <CMAKE_C_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>" )
-  set( CMAKE_C_CREATE_SHARED_LIBRARY "${CMAKE_C_CREATE_SHARED_LIBRARY} \"${__libsupcxx}\"" )
-  set( CMAKE_C_CREATE_SHARED_MODULE  "${CMAKE_C_CREATE_SHARED_MODULE} \"${__libsupcxx}\"" )
-  set( CMAKE_C_LINK_EXECUTABLE       "${CMAKE_C_LINK_EXECUTABLE} \"${__libsupcxx}\"" )
+  # EW: Why link C++ for C?
+#  set( CMAKE_C_CREATE_SHARED_LIBRARY "${CMAKE_C_CREATE_SHARED_LIBRARY} \"${__libsupcxx}\"" )
+#  set( CMAKE_C_CREATE_SHARED_MODULE  "${CMAKE_C_CREATE_SHARED_MODULE} \"${__libsupcxx}\"" )
+#  set( CMAKE_C_LINK_EXECUTABLE       "${CMAKE_C_LINK_EXECUTABLE} \"${__libsupcxx}\"" )
  endif()
  if( ANDROID_STL MATCHES "gnustl" )
   if( NOT EXISTS "${ANDROID_LIBM_PATH}" )
@@ -1327,7 +1462,13 @@ set( ANDROID_LINKER_FLAGS "" )
 if( ARMEABI_V7A )
  # this is *required* to use the following linker flags that routes around
  # a CPU bug in some Cortex-A8 implementations:
- set( ANDROID_LINKER_FLAGS "${ANDROID_LINKER_FLAGS} -Wl,--fix-cortex-a8" )
+ # EW: Applying my changes to linker flags. This required adding ARMEABI and X86. Neither of us have a 64-bit case.
+ # set( ANDROID_LINKER_FLAGS "${ANDROID_LINKER_FLAGS} -Wl,--fix-cortex-a8" )
+ set( ANDROID_LINKER_FLAGS "-no-canonical-prefixes -march=armv7-a -Wl,--fix-cortex-a8 -Wl,--no-undefined -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now ${ANDROID_LINKER_FLAGS} -lc -lm" )
+elseif( ARMEABI )
+ set( ANDROID_LINKER_FLAGS "-no-canonical-prefixes  -Wl,--no-undefined -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now ${ANDROID_LINKER_FLAGS} -lc -lm" )
+elseif ( X86 )
+ set( ANDROID_LINKER_FLAGS "-no-canonical-prefixes  -Wl,--no-undefined -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now ${ANDROID_LINKER_FLAGS} -lc -lm" )
 endif()
 
 if( ANDROID_NO_UNDEFINED )
@@ -1440,10 +1581,10 @@ endif()
 if( DEFINED ANDROID_EXCEPTIONS AND ANDROID_STL_FORCE_FEATURES )
  if( ANDROID_EXCEPTIONS )
   set( CMAKE_CXX_FLAGS "-fexceptions ${CMAKE_CXX_FLAGS}" )
-  set( CMAKE_C_FLAGS "-fexceptions ${CMAKE_C_FLAGS}" )
+#  set( CMAKE_C_FLAGS "-fexceptions ${CMAKE_C_FLAGS}" )
  else()
   set( CMAKE_CXX_FLAGS "-fno-exceptions ${CMAKE_CXX_FLAGS}" )
-  set( CMAKE_C_FLAGS "-fno-exceptions ${CMAKE_C_FLAGS}" )
+#  set( CMAKE_C_FLAGS "-fno-exceptions ${CMAKE_C_FLAGS}" )
  endif()
 endif()
 
