@@ -1627,7 +1627,7 @@ endif()
 
 
 # Maybe this isn't the best place for this, but C89 mode by default keeps tripping me up with different codebases.
-set( CMAKE_C_FLAGS "-std=gnu99" ${CMAKE_C_FLAGS} )
+set( CMAKE_C_FLAGS "-std=gnu99 ${CMAKE_C_FLAGS}" )
 
 
 # global includes and link directories
